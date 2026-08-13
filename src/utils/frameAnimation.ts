@@ -37,6 +37,8 @@ export class FrameAnimation {
   setFrames(frames: ImageData[]) {
     this.frames = frames;
     this.currentFrameIndex = Math.min(this.currentFrameIndex, frames.length - 1);
+    // Redraw the current frame after updating frames
+    this.drawCurrentFrame();
   }
 
   /**
