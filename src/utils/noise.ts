@@ -1,14 +1,23 @@
 // Simplex Noise implementation for deterministic procedural generation
 export class SimplexNoise {
   private perm: number[];
+  private seedOffset: number = 0;
   private grad3 = [
     [1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0],
     [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1],
     [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]
   ];
-
+  
   constructor(seed: number) {
     this.perm = this.generatePermutation(seed);
+  }
+
+  /**
+   * Set seed offset for layer-specific noise variation
+   * Used to ensure different layers have different noise patterns
+   */
+  setSeedOffset(offset: number): void {
+    this.seedOffset = offset;
   }
 
   private generatePermutation(seed: number): number[] {
@@ -62,9 +71,10 @@ export class SimplexNoise {
     const ii = i & 255;
     const jj = j & 255;
 
-    const gi0 = this.perm[ii + this.perm[jj]] % 12;
-    const gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
-    const gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+    // Apply seed offset to permutation lookup for layer variation
+    const gi0 = this.perm[(ii + this.seedOffset) & 255 + this.perm[(jj + this.seedOffset) & 255]] % 12;
+    const gi1 = this.perm[(ii + i1 + this.seedOffset) & 255 + this.perm[(jj + j1 + this.seedOffset) & 255]] % 12;
+    const gi2 = this.perm[(ii + 1 + this.seedOffset) & 255 + this.perm[(jj + 1 + this.seedOffset) & 255]] % 12;
 
     let t0 = 0.5 - x0 * x0 - y0 * y0;
     if (t0 < 0) {

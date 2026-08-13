@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { FrameAnimation } from '../utils/frameAnimation';
+import { useEffect, useRef, useCallback } from 'react';
+import type { RefObject } from 'react';
+import { FrameAnimation, FrameAnimationOptions } from '../utils/frameAnimation';
 
 interface UseFrameAnimationOptions {
-  canvasRef: React.RefObject<HTMLCanvasElement>;
+  canvasRef: RefObject<HTMLCanvasElement>;
   frames: ImageData[] | null;
   fps: number;
   isPlaying: boolean;
@@ -20,12 +21,33 @@ export function useFrameAnimation({
   onFrameUpdate,
 }: UseFrameAnimationOptions) {
   const animationRef = useRef<FrameAnimation | null>(null);
+  const callbackRef = useRef(onFrameUpdate);
+
+  // Store latest callback in ref to stabilize onFrameUpdate
+  useEffect(() => {
+    callbackRef.current = onFrameUpdate;
+  }, [onFrameUpdate]);
 
   // Initialize animation when frames change
   useEffect(() => {
     if (!frames || frames.length === 0 || !canvasRef.current) return;
 
-    animationRef.current = new FrameAnimation(frames, fps, onFrameUpdate);
+    // Set canvas size before first draw
+    canvasRef.current.width = frames[0].width;
+    canvasRef.current.height = frames[0].height;
+
+    const options: FrameAnimationOptions = {
+      canvasRef,
+      frames,
+      fps,
+      onFrameUpdate: (index: number) => {
+        if (callbackRef.current) {
+          callbackRef.current(index);
+        }
+      },
+    };
+
+    animationRef.current = new FrameAnimation(options);
     
     // Draw initial frame
     const ctx = canvasRef.current.getContext('2d');
@@ -38,9 +60,9 @@ export function useFrameAnimation({
         animationRef.current.stop();
       }
     };
-  }, [frames, fps, canvasRef, onFrameUpdate]);
+  }, [frames, fps, canvasRef]);
 
-  // Handle play/pause
+  // Handle play/pause - responds to animation changes
   useEffect(() => {
     if (!animationRef.current) return;
 
@@ -49,17 +71,9 @@ export function useFrameAnimation({
     } else {
       animationRef.current.stop();
     }
-  }, [isPlaying]);
+  }, [isPlaying, frames, fps]);
 
-  // Update canvas size when frames change
-  useEffect(() => {
-    if (!frames || frames.length === 0 || !canvasRef.current) return;
-
-    canvasRef.current.width = frames[0].width;
-    canvasRef.current.height = frames[0].height;
-  }, [frames, canvasRef]);
-
-  const goToFrame = (index: number) => {
+  const goToFrame = useCallback((index: number) => {
     if (animationRef.current) {
       animationRef.current.goToFrame(index);
       
@@ -67,19 +81,19 @@ export function useFrameAnimation({
       if (canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d');
         if (ctx) {
-          animationRef.current.draw(ctx);
+          animationRef.current!.draw(ctx);
         }
       }
     }
-  };
+  }, []);
 
-  const getCurrentFrame = () => {
+  const getCurrentFrame = useCallback(() => {
     return animationRef.current?.getCurrentFrame() ?? 0;
-  };
+  }, []);
 
-  const getFrameCount = () => {
+  const getFrameCount = useCallback(() => {
     return animationRef.current?.getFrameCount() ?? 0;
-  };
+  }, []);
 
   return {
     goToFrame,

@@ -1,43 +1,59 @@
 import { WaterConfig } from '../types';
 import { SimplexNoise } from './noise';
 
+interface RGB {
+  r: number;
+  g: number;
+  b: number;
+}
+
 /**
  * Generates a single frame of water animation using Gerstner waves and noise
  */
 export class WaterGenerator {
   private config: WaterConfig;
   private noise: SimplexNoise;
-
+  
   constructor(config: WaterConfig) {
     this.config = config;
     this.noise = new SimplexNoise(config.seed);
   }
 
   /**
-   * Generate all frames for the animation sequence
-   * Returns array of ImageData objects (one per frame)
+   * Generate a single frame at the specified index
+   * This enables incremental generation with progress tracking
    */
-  generateFrames(): ImageData[] {
-    const frames: ImageData[] = [];
+  generateFrame(frameIndex: number): ImageData {
     const { width, height, frameCount, fps } = this.config;
     
     // Calculate loop duration for seamless looping
     const loopDuration = frameCount / fps;
+    const time = frameIndex / fps;
+    const normalizedTime = frameIndex / frameCount;
+    
+    // Create canvas for this frame
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Render water layers
+    this.renderWater(ctx, width, height, time, normalizedTime, loopDuration);
+    
+    return ctx.getImageData(0, 0, width, height);
+  }
+
+  /**
+   * Generate all frames for the animation sequence
+   * Returns array of ImageData objects (one per frame)
+   * Note: For large frame counts, use generateFrame() for incremental generation
+   */
+  generateFrames(): ImageData[] {
+    const frames: ImageData[] = [];
+    const { frameCount } = this.config;
     
     for (let f = 0; f < frameCount; f++) {
-      const time = f / fps;
-      const normalizedTime = f / frameCount;
-      
-      // Create canvas for this frame
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d')!;
-      
-      // Render water layers
-      this.renderWater(ctx, width, height, time, normalizedTime, loopDuration);
-      
-      frames.push(ctx.getImageData(0, 0, width, height));
+      frames.push(this.generateFrame(f));
     }
     
     return frames;
@@ -77,8 +93,13 @@ export class WaterGenerator {
       const layerAmplitude = waveAmplitude * (1 - depth * 0.5);
       const layerSpeed = waveSpeed * (1 - depth * 0.3);
       
-      // Time offset for seamless looping
-      const layerTime = (time * layerSpeed + normalizedTime * layerCount) % loopDuration;
+      // Time offset for seamless looping - derive phase solely from normalizedTime
+      // This ensures identical values at frame 0 and the next loop boundary
+      const layerPhase = (normalizedTime * layerCount) % 1.0;
+      const layerTime = time * layerSpeed + layerPhase * loopDuration;
+      
+      // Adjust noise sampling coordinates to follow the same periodic path
+      this.noise.setSeedOffset(layer * 100);
       
       this.renderWaveLayer(
         ctx,
@@ -221,6 +242,7 @@ export class WaterGenerator {
 
   /**
    * Add specular highlights on wave crests
+   * Uses full wave-height derivative including amplitude and secondary wave contribution
    */
   private addHighlights(
     ctx: CanvasRenderingContext2D,
@@ -243,20 +265,26 @@ export class WaterGenerator {
     
     for (let x = 0; x <= width; x += highlightWidth * 2) {
       const wavePhase = x * frequency - time * 2 + layerIndex;
-      const derivative = Math.cos(wavePhase) * frequency;
       
-      // Highlight intensity based on wave slope
-      const slope = Math.abs(derivative);
-      if (slope > 0.3 && slope < 0.7) {
+      // Full wave-height derivative including amplitude and secondary wave contribution
+      const primaryDerivative = Math.cos(wavePhase) * frequency * amplitude;
+      const secondaryDerivative = Math.cos(wavePhase * 2.3 + layerIndex) * (frequency * 2.3) * (amplitude * 0.3);
+      const totalSlope = primaryDerivative + secondaryDerivative;
+      
+      // Highlight intensity based on calibrated wave slope
+      const slope = Math.abs(totalSlope);
+      // Calibrated thresholds for slope-based highlighting
+      if (slope > 0.15 && slope < 0.5) {
         const y = this.calculateWaveHeight(x, time, frequency, amplitude, direction, layerIndex);
         const screenY = height / 2 + y * scale;
         
-        const intensity = (slope - 0.3) / 0.4;
+        // Intensity scaled by slope within calibrated range
+        const intensity = Math.min(1, (slope - 0.15) / 0.35);
         ctx.fillStyle = this.rgbToString({
           r: highlightRGB.r,
           g: highlightRGB.g,
           b: highlightRGB.b,
-          a: intensity * 0.6
+          a: intensity * 0.6 * specularIntensity * (1 - roughness)
         });
         
         ctx.beginPath();
@@ -287,10 +315,4 @@ export class WaterGenerator {
     const a = rgb.a !== undefined ? rgb.a : 1;
     return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
   }
-}
-
-interface RGB {
-  r: number;
-  g: number;
-  b: number;
 }

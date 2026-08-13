@@ -5,6 +5,10 @@ import { saveAs } from 'file-saver';
  * Export utilities for frame sequences
  */
 export class FrameExporter {
+  // Conservative canvas size limits (most browsers support up to 16384x16384)
+  private static readonly MAX_CANVAS_SIZE = 16384;
+  private static readonly MAX_PIXEL_AREA = 268435456; // 16384^2
+
   /**
    * Export frames as PNG sequence in a ZIP file
    */
@@ -12,6 +16,11 @@ export class FrameExporter {
     frames: ImageData[],
     filename: string = 'water-animation'
   ): Promise<void> {
+    // Guard against empty frames
+    if (!frames || frames.length === 0) {
+      throw new Error('No frames to export');
+    }
+
     const zip = new JSZip();
     
     for (let i = 0; i < frames.length; i++) {
@@ -33,19 +42,47 @@ export class FrameExporter {
 
   /**
    * Export frames as a spritesheet (single image with all frames)
+   * @param frames - Array of ImageData frames
+   * @param fps - Frames per second for metadata
+   * @param columns - Number of columns in the spritesheet
+   * @param filename - Base filename for output files
    */
   static async exportAsSpritesheet(
     frames: ImageData[],
+    fps: number = 30,
     columns: number = 10,
     filename: string = 'water-spritesheet'
   ): Promise<void> {
+    // Guard against empty frames
+    if (!frames || frames.length === 0) {
+      throw new Error('No frames to export');
+    }
+
     const frameWidth = frames[0].width;
     const frameHeight = frames[0].height;
     const rows = Math.ceil(frames.length / columns);
     
+    const totalWidth = frameWidth * columns;
+    const totalHeight = frameHeight * rows;
+
+    // Check for supported maximum dimensions
+    if (totalWidth > this.MAX_CANVAS_SIZE || totalHeight > this.MAX_CANVAS_SIZE) {
+      throw new Error(
+        `Spritesheet dimensions (${totalWidth}x${totalHeight}) exceed maximum supported size (${this.MAX_CANVAS_SIZE}x${this.MAX_CANVAS_SIZE})`
+      );
+    }
+
+    // Check for maximum pixel area
+    const totalPixels = totalWidth * totalHeight;
+    if (totalPixels > this.MAX_PIXEL_AREA) {
+      throw new Error(
+        `Spritesheet pixel area (${totalPixels}) exceeds maximum supported area (${this.MAX_PIXEL_AREA})`
+      );
+    }
+    
     const canvas = document.createElement('canvas');
-    canvas.width = frameWidth * columns;
-    canvas.height = frameHeight * rows;
+    canvas.width = totalWidth;
+    canvas.height = totalHeight;
     const ctx = canvas.getContext('2d')!;
     
     // Fill with transparent background
@@ -64,14 +101,14 @@ export class FrameExporter {
     const pngBlob = await this.canvasToBlob(canvas, 'image/png');
     saveAs(pngBlob, `${filename}.png`);
     
-    // Also export metadata JSON
+    // Also export metadata JSON with fps parameter
     const metadata = {
       frameWidth,
       frameHeight,
       frameCount: frames.length,
       columns,
       rows,
-      fps: 30
+      fps
     };
     
     const jsonBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
@@ -87,11 +124,11 @@ export class FrameExporter {
     quality: number = 0.8,
     filename: string = 'water-animation'
   ): Promise<void> {
-    // Check if WebP animation is supported
-    const testCanvas = document.createElement('canvas');
-    testCanvas.width = frames[0].width;
-    testCanvas.height = frames[0].height;
-    
+    // Guard against empty frames
+    if (!frames || frames.length === 0) {
+      throw new Error('No frames to export');
+    }
+
     // For now, export as individual WebP frames in ZIP
     const zip = new JSZip();
     
@@ -114,15 +151,26 @@ export class FrameExporter {
 
   /**
    * Helper: Convert canvas to blob
+   * Rejects when toBlob supplies no blob or when blob type doesn't match requested type
    */
   private static canvasToBlob(
     canvas: HTMLCanvasElement,
     type: string = 'image/png',
     quality?: number
   ): Promise<Blob> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       canvas.toBlob(
-        (blob) => resolve(blob!),
+        (blob) => {
+          if (!blob) {
+            reject(new Error('Canvas toBlob returned null'));
+            return;
+          }
+          if (blob.type !== type) {
+            reject(new Error(`Canvas toBlob returned wrong type: ${blob.type} instead of ${type}`));
+            return;
+          }
+          resolve(blob);
+        },
         type,
         quality
       );
@@ -133,6 +181,11 @@ export class FrameExporter {
    * Get estimated file size for frames
    */
   static async estimateSize(frames: ImageData[]): Promise<{ pngMB: number; webpMB: number }> {
+    // Guard against empty frames
+    if (!frames || frames.length === 0) {
+      return { pngMB: 0, webpMB: 0 };
+    }
+
     const sampleSize = Math.min(10, frames.length);
     let totalPngSize = 0;
     let totalWebpSize = 0;

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useFrameAnimation } from '../hooks/useFrameAnimation';
 
@@ -8,7 +8,8 @@ export const PlaybackCanvas: React.FC = () => {
   const fps = useAppStore((state) => state.config.fps);
   const isPlaying = useAppStore((state) => state.isPlaying);
   const setCurrentFrameIndex = useAppStore((state) => state.setCurrentFrameIndex);
-
+  const setIsPlaying = useAppStore((state) => state.setIsPlaying);
+  
   const { goToFrame, getFrameCount } = useFrameAnimation({
     canvasRef,
     frames,
@@ -17,14 +18,34 @@ export const PlaybackCanvas: React.FC = () => {
     onFrameUpdate: (index) => setCurrentFrameIndex(index),
   });
 
-  const frameCount = getFrameCount();
+  // Derive frameCount directly from reactive frames state
+  const frameCount = frames ? frames.length : 0;
   const currentFrame = useAppStore((state) => state.currentFrameIndex);
 
-  // Handle scrubber input
-  const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Local state for scrubbing to pause playback during interaction
+  const [isScrubbing, setIsScrubbing] = useState(false);
+
+  // Handle scrubber input - updates state.currentFrameIndex source
+  const handleScrubberChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newIndex = parseInt(e.target.value, 10);
+    
+    // Pause playback during scrubbing
+    if (!isScrubbing && isPlaying) {
+      setIsPlaying(false);
+      setIsScrubbing(true);
+    }
+    
+    // Update the state.currentFrameIndex source used by controlled input
+    setCurrentFrameIndex(newIndex);
     goToFrame(newIndex);
-  };
+  }, [goToFrame, setCurrentFrameIndex, setIsPlaying, isPlaying, isScrubbing]);
+
+  // Handle scrubber release
+  const handleScrubberMouseUp = useCallback(() => {
+    if (isScrubbing) {
+      setIsScrubbing(false);
+    }
+  }, [isScrubbing]);
 
   if (!frames || frames.length === 0) {
     return (
@@ -66,6 +87,8 @@ export const PlaybackCanvas: React.FC = () => {
             max={frameCount - 1}
             value={currentFrame}
             onChange={handleScrubberChange}
+            onMouseUp={handleScrubberMouseUp}
+            onTouchEnd={handleScrubberMouseUp}
             className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
           />
         </div>

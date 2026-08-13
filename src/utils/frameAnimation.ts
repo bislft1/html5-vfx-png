@@ -3,7 +3,18 @@
  * This is the "trivial" playback stage that simply selects and draws frames
  * with NO simulation recalculation
  */
+import type { RefObject } from 'react';
+
+export interface FrameAnimationOptions {
+  canvasRef: RefObject<HTMLCanvasElement>;
+  frames: ImageData[];
+  fps: number;
+  onFrameUpdate?: (frameIndex: number) => void;
+}
+
 export class FrameAnimation {
+  private canvas: HTMLCanvasElement | null = null;
+  private ctx: CanvasRenderingContext2D | null = null;
   private frames: ImageData[];
   private fps: number;
   private currentIndex: number = 0;
@@ -12,31 +23,41 @@ export class FrameAnimation {
   private animationFrameId: number | null = null;
   private onFrameUpdate?: (frameIndex: number) => void;
 
-  constructor(frames: ImageData[], fps: number, onFrameUpdate?: (frameIndex: number) => void) {
-    this.frames = frames;
-    this.fps = fps;
-    this.onFrameUpdate = onFrameUpdate;
+  constructor(options: FrameAnimationOptions) {
+    this.canvas = options.canvasRef.current || null;
+    this.frames = options.frames;
+    // Validate FPS: must be positive, default to 30 if invalid
+    this.fps = options.fps > 0 ? options.fps : 30;
+    this.onFrameUpdate = options.onFrameUpdate;
+    
+    if (this.canvas) {
+      this.ctx = this.canvas.getContext('2d');
+    }
   }
 
   /**
    * Draw the current frame to a canvas context
    * This is the core "trivial playback" operation - just putting pixels
    */
-  draw(ctx: CanvasRenderingContext2D): void {
+  draw(ctx?: CanvasRenderingContext2D): void {
     if (this.frames.length === 0) return;
     
+    const targetCtx = ctx || this.ctx;
+    if (!targetCtx) return;
+    
     const frame = this.frames[this.currentIndex];
-    ctx.putImageData(frame, 0, 0);
+    targetCtx.putImageData(frame, 0, 0);
   }
 
   /**
    * Start playback loop
+   * Preserves the current frame position when resuming
    */
   play(): void {
     if (this.isPlaying) return;
     
     this.isPlaying = true;
-    this.startTime = performance.now();
+    // Do not reset startTime to preserve current frame position
     this.animate();
   }
 
@@ -56,6 +77,7 @@ export class FrameAnimation {
    */
   goToFrame(index: number): void {
     this.currentIndex = Math.max(0, Math.min(index, this.frames.length - 1));
+    // Update startTime to reflect the new frame position
     this.startTime = performance.now() - (this.currentIndex / this.fps) * 1000;
   }
 
@@ -107,6 +129,9 @@ export class FrameAnimation {
         this.onFrameUpdate(this.currentIndex);
       }
     }
+
+    // Retain canvas context and call putImageData for selected frame
+    this.draw();
 
     this.animationFrameId = requestAnimationFrame(this.animate);
   };

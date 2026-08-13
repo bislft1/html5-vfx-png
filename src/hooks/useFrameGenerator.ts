@@ -12,41 +12,48 @@ export function useFrameGenerator() {
   const setGenerationProgress = useAppStore((state) => state.setGenerationProgress);
   const setGeneratedFrames = useAppStore((state) => state.setGeneratedFrames);
   const setShowExportDialog = useAppStore((state) => state.setShowExportDialog);
+  const setGenerationError = useAppStore((state) => state.setGenerationError);
 
   const [generationTime, setGenerationTime] = useState<number | null>(null);
   const [estimatedSize, setEstimatedSize] = useState<{ pngMB: number; webpMB: number } | null>(null);
 
   /**
    * Generate all frames (expensive operation)
+   * Uses incremental per-frame generation with event loop yielding
    */
   const generateFrames = useCallback(async () => {
+    // Clear previous state before starting new generation
+    setGeneratedFrames(null);
+    setGenerationTime(null);
+    setEstimatedSize(null);
+    setGenerationError(null);
+    
     setGenerating(true);
     setGenerationProgress(0);
     
     const startTime = performance.now();
     
-    // Use setTimeout to allow UI to update before expensive operation
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
     try {
       const generator = new WaterGenerator(config);
       
-      // Generate frames with progress tracking
+      // Generate frames incrementally
       const totalFrames = config.frameCount;
       const frames: ImageData[] = [];
       
       for (let i = 0; i < totalFrames; i++) {
-        // We need to modify the generator to support incremental generation
-        // For now, we'll batch them
-        if (i % 10 === 0) {
-          setGenerationProgress(Math.round((i / totalFrames) * 100));
-          await new Promise(resolve => setTimeout(resolve, 10)); // Allow UI update
+        // Generate single frame using generateFrame method
+        const frame = generator.generateFrame(i);
+        frames.push(frame);
+        
+        // Update progress after each frame completion
+        const progress = Math.round(((i + 1) / totalFrames) * 100);
+        setGenerationProgress(progress);
+        
+        // Yield to event loop between frames to keep UI responsive
+        if (i % 5 === 0 || i === totalFrames - 1) {
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
-      
-      // Generate all frames (this is the expensive part)
-      const generatedFrames = generator.generateFrames();
-      frames.push(...generatedFrames);
       
       const endTime = performance.now();
       const duration = (endTime - startTime) / 1000;
@@ -65,13 +72,15 @@ export function useFrameGenerator() {
       
     } catch (error) {
       console.error('Frame generation failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Generation failed';
+      setGenerationError(errorMessage);
       setGenerating(false);
       setGenerationProgress(0);
-      throw error;
+      return; // Don't rethrow, surface error through store
     }
     
     setGenerating(false);
-  }, [config, setGenerating, setGenerationProgress, setGeneratedFrames]);
+  }, [config, setGenerating, setGenerationProgress, setGeneratedFrames, setGenerationError]);
 
   /**
    * Export frames as PNG sequence
@@ -90,8 +99,8 @@ export function useFrameGenerator() {
     const frames = useAppStore.getState().generatedFrames;
     if (!frames || frames.length === 0) return;
     
-    await FrameExporter.exportAsSpritesheet(frames, 10, 'water-spritesheet');
-  }, []);
+    await FrameExporter.exportAsSpritesheet(frames, config.fps, 10, 'water-spritesheet');
+  }, [config.fps]);
 
   /**
    * Export frames as WebP sequence

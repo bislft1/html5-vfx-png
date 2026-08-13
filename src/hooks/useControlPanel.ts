@@ -40,26 +40,26 @@ export function useControlPanel() {
 
     // Wave parameters
     const waveFolder = gui.addFolder('🌊 Wave Settings');
-    waveFolder.add(config, 'waveAmplitude', 5, 100, 1).name('Amplitude').onChange((value) => {
+    waveFolder.add(config, 'waveAmplitude', 5, 100, 1).name('Amplitude').onChange((value: number) => {
       setConfig({ waveAmplitude: value });
     });
-    waveFolder.add(config, 'waveFrequency', 0.005, 0.1, 0.001).name('Frequency').onChange((value) => {
+    waveFolder.add(config, 'waveFrequency', 0.005, 0.1, 0.001).name('Frequency').onChange((value: number) => {
       setConfig({ waveFrequency: value });
     });
-    waveFolder.add(config, 'waveSpeed', 0.1, 5, 0.1).name('Speed').onChange((value) => {
+    waveFolder.add(config, 'waveSpeed', 0.1, 5, 0.1).name('Speed').onChange((value: number) => {
       setConfig({ waveSpeed: value });
     });
-    waveFolder.add(config, 'waveDirection', 0, 360, 5).name('Direction (°)').onChange((value) => {
+    waveFolder.add(config, 'waveDirection', 0, 360, 5).name('Direction (°)').onChange((value: number) => {
       setConfig({ waveDirection: value });
     });
     waveFolder.open();
 
     // Layer settings
     const layerFolder = gui.addFolder('📚 Layers');
-    layerFolder.add(config, 'layerCount', 1, 6, 1).name('Layer Count').onChange((value) => {
+    layerFolder.add(config, 'layerCount', 1, 6, 1).name('Layer Count').onChange((value: number) => {
       setConfig({ layerCount: value });
     });
-    layerFolder.add(config, 'layerDepthFactor', 0.3, 0.9, 0.05).name('Depth Factor').onChange((value) => {
+    layerFolder.add(config, 'layerDepthFactor', 0.3, 0.9, 0.05).name('Depth Factor').onChange((value: number) => {
       setConfig({ layerDepthFactor: value });
     });
     layerFolder.open();
@@ -79,10 +79,10 @@ export function useControlPanel() {
 
     // Shading
     const shadingFolder = gui.addFolder('💡 Shading');
-    shadingFolder.add(config, 'specularIntensity', 0, 1, 0.05).name('Specular').onChange((value) => {
+    shadingFolder.add(config, 'specularIntensity', 0, 1, 0.05).name('Specular').onChange((value: number) => {
       setConfig({ specularIntensity: value });
     });
-    shadingFolder.add(config, 'roughness', 0, 1, 0.05).name('Roughness').onChange((value) => {
+    shadingFolder.add(config, 'roughness', 0, 1, 0.05).name('Roughness').onChange((value: number) => {
       setConfig({ roughness: value });
     });
     shadingFolder.open();
@@ -92,6 +92,7 @@ export function useControlPanel() {
 
     return () => {
       gui.destroy();
+      guiRef.current = null; // Set to null immediately after destroying
     };
   }, [config, setConfig, resetConfig]);
 

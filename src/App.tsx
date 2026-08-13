@@ -1,9 +1,9 @@
 import React, { useRef } from 'react';
-import { useControlPanel } from '../hooks/useControlPanel';
-import { ControlPanel } from '../components/ControlPanel';
-import { PlaybackCanvas } from '../components/PlaybackCanvas';
-import { ActionBar } from '../components/ActionBar';
-import { ExportDialog } from '../components/ExportDialog';
+import { useControlPanel } from './hooks/useControlPanel';
+import { ControlPanel } from './components/ControlPanel';
+import { PlaybackCanvas } from './components/PlaybackCanvas';
+import { ActionBar } from './components/ActionBar';
+import { ExportDialog } from './components/ExportDialog';
 
 const App: React.FC = () => {
   const controlPanelRef = useRef<HTMLDivElement>(null);
