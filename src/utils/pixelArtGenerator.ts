@@ -1,17 +1,63 @@
 import { PixelArtConfig } from '../types';
-import { createNoise2D } from 'simplex-noise';
+import seedrandom from 'seedrandom';
 
 export class PixelArtWaterGenerator {
   private config: PixelArtConfig;
-  private noise: ReturnType<typeof createNoise2D>;
+  private rng: () => number;
   private tileWidth: number;
   private tileHeight: number;
-
+  
   constructor(config: PixelArtConfig) {
     this.config = config;
-    this.noise = createNoise2D(() => config.seed);
+    this.rng = seedrandom(config.seed.toString());
     this.tileWidth = Math.floor(config.width / config.tileResolution);
     this.tileHeight = Math.floor(config.height / config.tileResolution);
+  }
+
+  /**
+   * Simple 2D noise function using seeded RNG
+   */
+  private noise2D(x: number, y: number): number {
+    const combined = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+    return (combined - Math.floor(combined)) * 2 - 1;
+  }
+
+  /**
+   * Smooth noise with interpolation
+   */
+  private smoothNoise(x: number, y: number): number {
+    const intX = Math.floor(x);
+    const intY = Math.floor(y);
+    const fracX = x - intX;
+    const fracY = y - intY;
+
+    const v1 = this.noise2D(intX, intY);
+    const v2 = this.noise2D(intX + 1, intY);
+    const v3 = this.noise2D(intX, intY + 1);
+    const v4 = this.noise2D(intX + 1, intY + 1);
+
+    const i1 = v1 * (1 - fracX) + v2 * fracX;
+    const i2 = v3 * (1 - fracX) + v4 * fracX;
+    return i1 * (1 - fracY) + i2 * fracY;
+  }
+
+  /**
+   * Perlin-like noise with octaves
+   */
+  private octaveNoise(x: number, y: number, octaves: number = 3): number {
+    let value = 0;
+    let amplitude = 1;
+    let frequency = 1;
+    let maxValue = 0;
+
+    for (let i = 0; i < octaves; i++) {
+      value += this.smoothNoise(x * frequency, y * frequency) * amplitude;
+      maxValue += amplitude;
+      amplitude *= 0.5;
+      frequency *= 2;
+    }
+
+    return value / maxValue;
   }
 
   /**
@@ -39,16 +85,16 @@ export class PixelArtWaterGenerator {
         
         // Layer multiple noise octaves for detail
         let noiseValue = 0;
-        noiseValue += this.noise(noiseX, noiseY) * 1.0;
-        noiseValue += this.noise(noiseX * 2, noiseY * 2 + time) * 0.5;
-        noiseValue += this.noise(noiseX * 4, noiseY * 4 - time) * 0.25;
+        noiseValue += this.octaveNoise(noiseX, noiseY) * 1.0;
+        noiseValue += this.octaveNoise(noiseX * 2, noiseY * 2 + time) * 0.5;
+        noiseValue += this.octaveNoise(noiseX * 4, noiseY * 4 - time) * 0.25;
         
         // Normalize to 0-1 range
         noiseValue = (noiseValue + 1) / 2;
         noiseValue = Math.max(0, Math.min(1, noiseValue));
         
         // Add turbulence distortion
-        const distortion = this.noise(tx * 0.05 + time, ty * 0.05 - time) * turbulence;
+        const distortion = this.octaveNoise(tx * 0.05 + time, ty * 0.05 - time) * turbulence;
         noiseValue = Math.max(0, Math.min(1, noiseValue + distortion * 0.3));
         
         // Select color from palette based on noise value
@@ -87,7 +133,7 @@ export class PixelArtWaterGenerator {
       
       // Draw intermittent highlight lines
       for (let x = 0; x < width; x += tileSize * 2) {
-        const segmentNoise = this.noise(x * 0.02 + time, i * 0.3);
+        const segmentNoise = this.octaveNoise(x * 0.02 + time, i * 0.3);
         if (segmentNoise > 0.3) {
           ctx.fillRect(
             x,
