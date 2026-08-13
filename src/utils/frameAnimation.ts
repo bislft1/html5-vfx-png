@@ -1,98 +1,96 @@
-/**
- * FrameAnimation - Playback class for pre-generated frames
- * This is the "trivial" playback stage that simply selects and draws frames
- * with NO simulation recalculation
- */
-import type { RefObject } from 'react';
-
 export interface FrameAnimationOptions {
-  canvasRef: RefObject<HTMLCanvasElement>;
+  canvasRef: React.RefObject<HTMLCanvasElement>;
   frames: ImageData[];
   fps: number;
   onFrameUpdate?: (frameIndex: number) => void;
 }
 
 export class FrameAnimation {
-  private canvas: HTMLCanvasElement | null = null;
-  private ctx: CanvasRenderingContext2D | null = null;
+  private canvas: HTMLCanvasElement | null;
+  private ctx: CanvasRenderingContext2D | null;
   private frames: ImageData[];
   private fps: number;
-  private currentIndex: number = 0;
-  private isPlaying: boolean = false;
-  private startTime: number = 0;
-  private animationFrameId: number | null = null;
+  private isPlaying: boolean;
+  private currentFrameIndex: number;
+  private animationId: number | null;
+  private lastFrameTime: number;
   private onFrameUpdate?: (frameIndex: number) => void;
 
   constructor(options: FrameAnimationOptions) {
     this.canvas = options.canvasRef.current || null;
+    this.ctx = this.canvas?.getContext('2d') || null;
     this.frames = options.frames;
-    // Validate FPS: must be positive, default to 30 if invalid
+    
+    // Validate FPS
     this.fps = options.fps > 0 ? options.fps : 30;
+    
+    this.isPlaying = false;
+    this.currentFrameIndex = 0;
+    this.animationId = null;
+    this.lastFrameTime = 0;
     this.onFrameUpdate = options.onFrameUpdate;
-    
-    if (this.canvas) {
-      this.ctx = this.canvas.getContext('2d');
-    }
   }
 
   /**
-   * Draw the current frame to a canvas context
-   * This is the core "trivial playback" operation - just putting pixels
+   * Update the frames array (e.g., after regeneration)
    */
-  draw(ctx?: CanvasRenderingContext2D): void {
-    if (this.frames.length === 0) return;
-    
-    const targetCtx = ctx || this.ctx;
-    if (!targetCtx) return;
-    
-    const frame = this.frames[this.currentIndex];
-    targetCtx.putImageData(frame, 0, 0);
+  setFrames(frames: ImageData[]) {
+    this.frames = frames;
+    this.currentFrameIndex = Math.min(this.currentFrameIndex, frames.length - 1);
   }
 
   /**
-   * Start playback loop
-   * Preserves the current frame position when resuming
+   * Set the callback for frame updates
    */
-  play(): void {
-    if (this.isPlaying) return;
+  setFrameUpdateCallback(callback?: (frameIndex: number) => void) {
+    this.onFrameUpdate = callback;
+  }
+
+  /**
+   * Start playback from current frame position
+   */
+  play() {
+    if (this.isPlaying || this.frames.length === 0) return;
     
     this.isPlaying = true;
-    // Do not reset startTime to preserve current frame position
+    this.lastFrameTime = performance.now();
     this.animate();
   }
 
   /**
-   * Stop playback
+   * Pause playback, retaining current frame
    */
-  stop(): void {
+  pause() {
     this.isPlaying = false;
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
     }
+  }
+
+  /**
+   * Stop and reset to first frame
+   */
+  stop() {
+    this.pause();
+    this.currentFrameIndex = 0;
+    this.drawCurrentFrame();
   }
 
   /**
    * Go to a specific frame
    */
-  goToFrame(index: number): void {
-    this.currentIndex = Math.max(0, Math.min(index, this.frames.length - 1));
-    // Update startTime to reflect the new frame position
-    this.startTime = performance.now() - (this.currentIndex / this.fps) * 1000;
+  goToFrame(index: number) {
+    const clampedIndex = Math.max(0, Math.min(this.frames.length - 1, index));
+    this.currentFrameIndex = clampedIndex;
+    this.drawCurrentFrame();
   }
 
   /**
    * Get current frame index
    */
-  getCurrentFrame(): number {
-    return this.currentIndex;
-  }
-
-  /**
-   * Get total frame count
-   */
-  getFrameCount(): number {
-    return this.frames.length;
+  getCurrentFrameIndex(): number {
+    return this.currentFrameIndex;
   }
 
   /**
@@ -103,36 +101,52 @@ export class FrameAnimation {
   }
 
   /**
-   * Export current frame as PNG data URL
+   * Get total frame count
    */
-  exportCurrentFrameAsPNG(): string {
-    if (this.frames.length === 0) return '';
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = this.frames[0].width;
-    canvas.height = this.frames[0].height;
-    const ctx = canvas.getContext('2d')!;
-    
-    ctx.putImageData(this.frames[this.currentIndex], 0, 0);
-    return canvas.toDataURL('image/png');
+  getFrameCount(): number {
+    return this.frames.length;
   }
 
-  private animate = (): void => {
-    if (!this.isPlaying) return;
-
-    const elapsed = performance.now() - this.startTime;
-    const targetFrame = Math.floor((elapsed / 1000) * this.fps) % this.frames.length;
+  /**
+   * Draw the current frame to canvas
+   */
+  private drawCurrentFrame() {
+    if (!this.ctx || this.frames.length === 0) return;
     
-    if (targetFrame !== this.currentIndex) {
-      this.currentIndex = targetFrame;
-      if (this.onFrameUpdate) {
-        this.onFrameUpdate(this.currentIndex);
-      }
+    const frame = this.frames[this.currentFrameIndex];
+    this.ctx.putImageData(frame, 0, 0);
+    
+    if (this.onFrameUpdate) {
+      this.onFrameUpdate(this.currentFrameIndex);
+    }
+  }
+
+  /**
+   * Animation loop
+   */
+  private animate = () => {
+    if (!this.isPlaying || this.frames.length === 0) return;
+
+    const now = performance.now();
+    const frameInterval = 1000 / this.fps;
+
+    if (now - this.lastFrameTime >= frameInterval) {
+      // Advance to next frame
+      this.currentFrameIndex = (this.currentFrameIndex + 1) % this.frames.length;
+      this.drawCurrentFrame();
+      this.lastFrameTime = now;
     }
 
-    // Retain canvas context and call putImageData for selected frame
-    this.draw();
-
-    this.animationFrameId = requestAnimationFrame(this.animate);
+    this.animationId = requestAnimationFrame(this.animate);
   };
+
+  /**
+   * Cleanup resources
+   */
+  destroy() {
+    this.pause();
+    this.canvas = null;
+    this.ctx = null;
+    this.frames = [];
+  }
 }

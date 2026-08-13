@@ -1,49 +1,34 @@
-export interface WaterConfig {
+export interface PixelArtConfig {
   seed: number;
   width: number;
   height: number;
   frameCount: number;
   fps: number;
+
+  // Pixel art settings
+  tileResolution: number; // Size of each tile in pixels (e.g., 4 for 4x4 pixel tiles)
   
-  // Wave parameters
-  waveAmplitude: number;
-  waveFrequency: number;
-  waveSpeed: number;
-  waveDirection: number;
+  // Animation parameters
+  animationSpeed: number;
+  turbulence: number; // How much the water distorts
   
-  // Multi-layer settings
-  layerCount: number;
-  layerDepthFactor: number;
+  // Color palette (ordered from deep to surface)
+  colorPalette: string[];
   
-  // Color settings
-  baseColor: string;
-  highlightColor: string;
-  shadowColor: string;
-  
-  // Shading
-  specularIntensity: number;
-  roughness: number;
+  // Flow settings
+  flowOffset: number; // Horizontal flow per frame
 }
 
-export const defaultWaterConfig: WaterConfig = {
+export const defaultPixelArtConfig: PixelArtConfig = {
   seed: 12345,
-  width: 800,
-  height: 600,
-  frameCount: 150,
-  fps: 30,
+  width: 128,
+  height: 128,
+  frameCount: 60,
+  fps: 15,
   
-  waveAmplitude: 30,
-  waveFrequency: 0.02,
-  waveSpeed: 1.5,
-  waveDirection: 0,
-  
-  layerCount: 3,
-  layerDepthFactor: 0.7,
-  
-  baseColor: '#1a5f7a',
-  highlightColor: '#7fd8d8',
-  shadowColor: '#0a2f3f',
-  
-  specularIntensity: 0.8,
-  roughness: 0.3,
+  tileResolution: 4,
+  animationSpeed: 1.0,
+  turbulence: 0.5,
+  colorPalette: ['#1a4d6b', '#2d7da0', '#4da6ff', '#80c1ff', '#b3d9ff'],
+  flowOffset: 1,
 };

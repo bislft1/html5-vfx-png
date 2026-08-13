@@ -1,28 +1,22 @@
 import { create } from 'zustand';
-import { WaterConfig, defaultWaterConfig } from '../types';
+import { PixelArtConfig, defaultPixelArtConfig } from '../types';
 
 interface AppState {
-  // Configuration
-  config: WaterConfig;
-  
-  // Generation state
+  config: PixelArtConfig;
   isGenerating: boolean;
   generationProgress: number;
   generatedFrames: ImageData[] | null;
   generationError: string | null;
-  
-  // Playback state
+  generationTime: number | null;
   isPlaying: boolean;
   currentFrameIndex: number;
-  
-  // UI state
   showExportDialog: boolean;
-  
-  // Actions
-  setConfig: (config: Partial<WaterConfig>) => void;
+
+  setConfig: (config: Partial<PixelArtConfig>) => void;
   resetConfig: () => void;
   setGenerating: (isGenerating: boolean) => void;
   setGenerationProgress: (progress: number) => void;
+  setGenerationTime: (time: number | null) => void;
   setGeneratedFrames: (frames: ImageData[] | null) => void;
   setGenerationError: (error: string | null) => void;
   setIsPlaying: (isPlaying: boolean) => void;
@@ -31,44 +25,36 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  // Initial state
-  config: { ...defaultWaterConfig },
+  config: { ...defaultPixelArtConfig },
   isGenerating: false,
   generationProgress: 0,
   generatedFrames: null,
   generationError: null,
+  generationTime: null,
   isPlaying: false,
   currentFrameIndex: 0,
   showExportDialog: false,
-  
-  // Actions
+
   setConfig: (configUpdate) => set((state) => ({
     config: { ...state.config, ...configUpdate },
-    // Clear generated frames and reset playback state on config change
     generatedFrames: null,
     isPlaying: false,
     currentFrameIndex: 0,
   })),
-  
-  resetConfig: () => set({ 
-    config: { ...defaultWaterConfig },
-    // Clear generated frames and reset playback state on reset
+
+  resetConfig: () => set({
+    config: { ...defaultPixelArtConfig },
     generatedFrames: null,
     isPlaying: false,
     currentFrameIndex: 0,
   }),
-  
+
   setGenerating: (isGenerating) => set({ isGenerating }),
-  
   setGenerationProgress: (progress) => set({ generationProgress: progress }),
-  
+  setGenerationTime: (time) => set({ generationTime: time }),
   setGeneratedFrames: (frames) => set({ generatedFrames: frames }),
-  
   setGenerationError: (error) => set({ generationError: error }),
-  
   setIsPlaying: (isPlaying) => set({ isPlaying }),
-  
   setCurrentFrameIndex: (index) => set({ currentFrameIndex: index }),
-  
   setShowExportDialog: (show) => set({ showExportDialog: show }),
 }));

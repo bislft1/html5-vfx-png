@@ -1,216 +1,286 @@
 import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
+
+const MAX_CANVAS_SIZE = 8192;
+const MAX_TOTAL_PIXELS = 64 * 1024 * 1024; // 64 megapixels
+
+export interface ExportResult {
+  success: boolean;
+  error?: string;
+  blob?: Blob;
+}
 
 /**
- * Export utilities for frame sequences
+ * Estimate the size of a frame in bytes (rough estimate for PNG)
  */
-export class FrameExporter {
-  // Conservative canvas size limits (most browsers support up to 16384x16384)
-  private static readonly MAX_CANVAS_SIZE = 16384;
-  private static readonly MAX_PIXEL_AREA = 268435456; // 16384^2
+function estimateFrameSize(width: number, height: number): number {
+  // Rough estimate: 3-4 bytes per pixel for simple graphics, more for complex
+  return Math.floor(width * height * 3.5);
+}
 
-  /**
-   * Export frames as PNG sequence in a ZIP file
-   */
-  static async exportAsPNGSequence(
-    frames: ImageData[],
-    filename: string = 'water-animation'
-  ): Promise<void> {
-    // Guard against empty frames
-    if (!frames || frames.length === 0) {
-      throw new Error('No frames to export');
-    }
+/**
+ * Export frames as individual PNG files in a ZIP archive
+ */
+export async function exportAsPngSequence(
+  frames: ImageData[],
+  filename: string = 'animation'
+): Promise<ExportResult> {
+  if (frames.length === 0) {
+    return { success: false, error: 'No frames to export' };
+  }
 
+  try {
     const zip = new JSZip();
-    
+    const frameDir = zip.folder(filename);
+
     for (let i = 0; i < frames.length; i++) {
       const canvas = document.createElement('canvas');
       canvas.width = frames[i].width;
       canvas.height = frames[i].height;
       const ctx = canvas.getContext('2d')!;
-      
       ctx.putImageData(frames[i], 0, 0);
-      
-      const pngBlob = await this.canvasToBlob(canvas, 'image/png');
-      const frameNumber = String(i).padStart(4, '0');
-      zip.file(`frame_${frameNumber}.png`, pngBlob);
+
+      const blob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob!), 'image/png');
+      });
+
+      const paddedIndex = String(i).padStart(4, '0');
+      frameDir?.file(`${filename}_${paddedIndex}.png`, blob);
     }
-    
+
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    saveAs(zipBlob, `${filename}.zip`);
+    return { success: true, blob: zipBlob };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Export failed' 
+    };
+  }
+}
+
+/**
+ * Export frames as a spritesheet with metadata
+ */
+export async function exportAsSpritesheet(
+  frames: ImageData[],
+  fps: number,
+  filename: string = 'spritesheet'
+): Promise<ExportResult> {
+  if (frames.length === 0) {
+    return { success: false, error: 'No frames to export' };
   }
 
-  /**
-   * Export frames as a spritesheet (single image with all frames)
-   * @param frames - Array of ImageData frames
-   * @param fps - Frames per second for metadata
-   * @param columns - Number of columns in the spritesheet
-   * @param filename - Base filename for output files
-   */
-  static async exportAsSpritesheet(
-    frames: ImageData[],
-    fps: number = 30,
-    columns: number = 10,
-    filename: string = 'water-spritesheet'
-  ): Promise<void> {
-    // Guard against empty frames
-    if (!frames || frames.length === 0) {
-      throw new Error('No frames to export');
-    }
+  const frameWidth = frames[0].width;
+  const frameHeight = frames[0].height;
 
-    const frameWidth = frames[0].width;
-    const frameHeight = frames[0].height;
-    const rows = Math.ceil(frames.length / columns);
-    
-    const totalWidth = frameWidth * columns;
-    const totalHeight = frameHeight * rows;
+  // Validate dimensions
+  if (frameWidth <= 0 || frameHeight <= 0) {
+    return { success: false, error: 'Invalid frame dimensions' };
+  }
 
-    // Check for supported maximum dimensions
-    if (totalWidth > this.MAX_CANVAS_SIZE || totalHeight > this.MAX_CANVAS_SIZE) {
-      throw new Error(
-        `Spritesheet dimensions (${totalWidth}x${totalHeight}) exceed maximum supported size (${this.MAX_CANVAS_SIZE}x${this.MAX_CANVAS_SIZE})`
-      );
-    }
+  // Check against maximum limits
+  const totalPixels = frameWidth * frameHeight * frames.length;
+  if (totalPixels > MAX_TOTAL_PIXELS) {
+    return { 
+      success: false, 
+      error: `Total pixel count (${totalPixels}) exceeds maximum (${MAX_TOTAL_PIXELS})` 
+    };
+  }
 
-    // Check for maximum pixel area
-    const totalPixels = totalWidth * totalHeight;
-    if (totalPixels > this.MAX_PIXEL_AREA) {
-      throw new Error(
-        `Spritesheet pixel area (${totalPixels}) exceeds maximum supported area (${this.MAX_PIXEL_AREA})`
-      );
-    }
-    
+  // Calculate grid layout
+  const columns = Math.ceil(Math.sqrt(frames.length));
+  const rows = Math.ceil(frames.length / columns);
+  const sheetWidth = frameWidth * columns;
+  const sheetHeight = frameHeight * rows;
+
+  // Check canvas size limits
+  if (sheetWidth > MAX_CANVAS_SIZE || sheetHeight > MAX_CANVAS_SIZE) {
+    return { 
+      success: false, 
+      error: `Spritesheet dimensions (${sheetWidth}x${sheetHeight}) exceed maximum (${MAX_CANVAS_SIZE}x${MAX_CANVAS_SIZE})` 
+    };
+  }
+
+  try {
     const canvas = document.createElement('canvas');
-    canvas.width = totalWidth;
-    canvas.height = totalHeight;
+    canvas.width = sheetWidth;
+    canvas.height = sheetHeight;
     const ctx = canvas.getContext('2d')!;
     
-    // Fill with transparent background
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw each frame
+    ctx.imageSmoothingEnabled = false;
+
+    // Draw all frames onto the spritesheet
     for (let i = 0; i < frames.length; i++) {
       const col = i % columns;
       const row = Math.floor(i / columns);
-      const x = col * frameWidth;
-      const y = row * frameHeight;
       
-      ctx.putImageData(frames[i], x, y);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = frameWidth;
+      tempCanvas.height = frameHeight;
+      const tempCtx = tempCanvas.getContext('2d')!;
+      tempCtx.putImageData(frames[i], 0, 0);
+
+      ctx.drawImage(
+        tempCanvas,
+        col * frameWidth,
+        row * frameHeight
+      );
     }
-    
-    const pngBlob = await this.canvasToBlob(canvas, 'image/png');
-    saveAs(pngBlob, `${filename}.png`);
-    
-    // Also export metadata JSON with fps parameter
+
+    // Create metadata JSON
     const metadata = {
       frameWidth,
       frameHeight,
-      frameCount: frames.length,
+      totalFrames: frames.length,
+      fps,
       columns,
       rows,
-      fps
+      animations: {
+        default: {
+          start: 0,
+          end: frames.length - 1,
+          loop: true,
+        },
+      },
     };
-    
-    const jsonBlob = new Blob([JSON.stringify(metadata, null, 2)], { type: 'application/json' });
-    saveAs(jsonBlob, `${filename}-metadata.json`);
-  }
 
-  /**
-   * Export as WebP animation (if browser supports it)
-   */
-  static async exportAsWebP(
-    frames: ImageData[],
-    fps: number = 30,
-    quality: number = 0.8,
-    filename: string = 'water-animation'
-  ): Promise<void> {
-    // Guard against empty frames
-    if (!frames || frames.length === 0) {
-      throw new Error('No frames to export');
-    }
-
-    // For now, export as individual WebP frames in ZIP
+    // Export as ZIP with image and metadata
     const zip = new JSZip();
     
+    const imageBlob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob!), 'image/png');
+    });
+    zip.file(`${filename}.png`, imageBlob);
+    zip.file(`${filename}.json`, JSON.stringify(metadata, null, 2));
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    return { success: true, blob: zipBlob };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Export failed' 
+    };
+  }
+}
+
+/**
+ * Export frames as WebP animation (if supported) or fallback to PNG sequence
+ */
+export async function exportAsWebP(
+  frames: ImageData[],
+  fps: number,
+  filename: string = 'animation'
+): Promise<ExportResult> {
+  if (frames.length === 0) {
+    return { success: false, error: 'No frames to export' };
+  }
+
+  // Check if WebP is supported
+  const webpSupported = await checkWebPSupport();
+  
+  if (!webpSupported) {
+    // Fallback to PNG sequence
+    return exportAsPngSequence(frames, filename);
+  }
+
+  try {
+    // For animated WebP, we need to use a different approach
+    // Since browser support varies, we'll export as individual WebP frames in ZIP
+    const zip = new JSZip();
+    const frameDir = zip.folder(filename);
+
     for (let i = 0; i < frames.length; i++) {
       const canvas = document.createElement('canvas');
       canvas.width = frames[i].width;
       canvas.height = frames[i].height;
       const ctx = canvas.getContext('2d')!;
-      
       ctx.putImageData(frames[i], 0, 0);
+
+      const blob = await canvasToBlob(canvas, 'image/webp', 0.8);
       
-      const webpBlob = await this.canvasToBlob(canvas, 'image/webp', quality);
-      const frameNumber = String(i).padStart(4, '0');
-      zip.file(`frame_${frameNumber}.webp`, webpBlob);
-    }
-    
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    saveAs(zipBlob, `${filename}-webp.zip`);
-  }
-
-  /**
-   * Helper: Convert canvas to blob
-   * Rejects when toBlob supplies no blob or when blob type doesn't match requested type
-   */
-  private static canvasToBlob(
-    canvas: HTMLCanvasElement,
-    type: string = 'image/png',
-    quality?: number
-  ): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            reject(new Error('Canvas toBlob returned null'));
-            return;
-          }
-          if (blob.type !== type) {
-            reject(new Error(`Canvas toBlob returned wrong type: ${blob.type} instead of ${type}`));
-            return;
-          }
-          resolve(blob);
-        },
-        type,
-        quality
-      );
-    });
-  }
-
-  /**
-   * Get estimated file size for frames
-   */
-  static async estimateSize(frames: ImageData[]): Promise<{ pngMB: number; webpMB: number }> {
-    // Guard against empty frames
-    if (!frames || frames.length === 0) {
-      return { pngMB: 0, webpMB: 0 };
+      const paddedIndex = String(i).padStart(4, '0');
+      frameDir?.file(`${filename}_${paddedIndex}.webp`, blob);
     }
 
-    const sampleSize = Math.min(10, frames.length);
-    let totalPngSize = 0;
-    let totalWebpSize = 0;
-    
-    for (let i = 0; i < sampleSize; i++) {
-      const canvas = document.createElement('canvas');
-      canvas.width = frames[i].width;
-      canvas.height = frames[i].height;
-      const ctx = canvas.getContext('2d')!;
-      
-      ctx.putImageData(frames[i], 0, 0);
-      
-      const pngBlob = await this.canvasToBlob(canvas, 'image/png');
-      const webpBlob = await this.canvasToBlob(canvas, 'image/webp', 0.8);
-      
-      totalPngSize += pngBlob.size;
-      totalWebpSize += webpBlob.size;
-    }
-    
-    const avgPngSize = totalPngSize / sampleSize;
-    const avgWebpSize = totalWebpSize / sampleSize;
-    
-    return {
-      pngMB: (avgPngSize * frames.length) / (1024 * 1024),
-      webpMB: (avgWebpSize * frames.length) / (1024 * 1024)
+    // Add a simple metadata file for animation timing
+    const metadata = {
+      fps,
+      frameCount: frames.length,
+      format: 'webp',
     };
+    zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    return { success: true, blob: zipBlob };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Export failed' 
+    };
+  }
+}
+
+/**
+ * Check if WebP format is supported
+ */
+async function checkWebPSupport(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 1, 1);
+    
+    canvas.toBlob((blob) => {
+      resolve(blob !== null && blob.type === 'image/webp');
+    }, 'image/webp');
+  });
+}
+
+/**
+ * Convert canvas to blob with validation
+ */
+async function canvasToBlob(
+  canvas: HTMLCanvasElement,
+  type: string = 'image/png',
+  quality: number = 0.92
+): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Failed to create blob from canvas'));
+        return;
+      }
+      
+      if (blob.type !== type) {
+        reject(new Error(`Requested ${type} but got ${blob.type}`));
+        return;
+      }
+      
+      resolve(blob);
+    }, type, quality);
+  });
+}
+
+/**
+ * Estimate total export size
+ */
+export function estimateExportSize(
+  frames: ImageData[],
+  format: 'png' | 'webp' | 'spritesheet'
+): number {
+  if (frames.length === 0) return 0;
+
+  const baseSize = estimateFrameSize(frames[0].width, frames[0].height);
+  
+  switch (format) {
+    case 'png':
+      return baseSize * frames.length * 1.1; // ~10% overhead for ZIP
+    case 'webp':
+      return baseSize * frames.length * 0.7; // WebP is typically 30% smaller
+    case 'spritesheet':
+      return baseSize * frames.length * 0.9; // Slightly more efficient
+    default:
+      return baseSize * frames.length;
   }
 }

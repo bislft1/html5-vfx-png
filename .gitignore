@@ -2,36 +2,34 @@
 # Dependencies
 node_modules/
 
-# Build outputs
+# Build artifacts
 dist/
 build/
 target/
+
+# Python related
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py.class
+*.class
+
+# Logs
+*.log
 
 # Environment variables
 .env
 .env.local
 .env.*
 
-# IDE files
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Logs
-*.log
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Temporary files
-*.tmp
-*.temp
-
-# OS generated files
+# OS generated
 .DS_Store
 Thumbs.db
 
@@ -40,30 +38,92 @@ coverage/
 htmlcov/
 .coverage
 
-# TypeScript/JavaScript build artifacts
-*.tsbuildinfo
-*.js.map
-*.cjs.map
+# Temporary files
+*.tmp
+*.temp
 
-# Vite specific
-.vite/
-
-# Package manager caches
-.pnpm-store/
-.yarn/
-.yarn-cache/
-.npm/
-.npx/
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 
 # Testing
+.mypy_cache/
+.pytest_cache/
 .nyc_output/
 coverage/
-.jest/
 
-# Runtime data
-.pid
-.sock
+# Package manager caches
+.npm/
+.yarn/
+.pnpm-store/
+.bazel-cache/
 
-# Local configuration
-local.properties
+# Gradle
+.gradle/
+
+# Maven
+.mvn/
+
+# Rust
+Cargo.lock
+target/
+
+# Go
+go.mod
+go.sum
+vendor/
+
+# Java
+*.jar
+*.war
+*.ear
+*.class
+*.o
+*.a
+*.so
+
+# C/C++
+*.exe
+*.dll
+*.so
+*.dylib
+*.obj
+*.out
+
+# Julia
+.julia/
+
+# Zig
+zig-cache/
+zig-out/
+
+# Docker
+.dockerenv
+Dockerfile*
+
+# CI/CD
+.github/
+.gitlab/
+.circleci/
+.travis.yml
 ```

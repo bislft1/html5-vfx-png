@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useFrameAnimation } from '../hooks/useFrameAnimation';
 
@@ -7,101 +7,90 @@ export const PlaybackCanvas: React.FC = () => {
   const frames = useAppStore((state) => state.generatedFrames);
   const fps = useAppStore((state) => state.config.fps);
   const isPlaying = useAppStore((state) => state.isPlaying);
+  const currentFrameIndex = useAppStore((state) => state.currentFrameIndex);
   const setCurrentFrameIndex = useAppStore((state) => state.setCurrentFrameIndex);
   const setIsPlaying = useAppStore((state) => state.setIsPlaying);
-  
-  const { goToFrame, getFrameCount } = useFrameAnimation({
+
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const frameCount = frames?.length || 0;
+
+  const { goToFrame, play, pause } = useFrameAnimation({
     canvasRef,
-    frames,
+    frames: frames || [],
     fps,
     isPlaying,
-    onFrameUpdate: (index) => setCurrentFrameIndex(index),
+    currentFrameIndex,
+    onFrameUpdate: (index) => {
+      if (!isScrubbing) {
+        setCurrentFrameIndex(index);
+      }
+    },
   });
 
-  // Derive frameCount directly from reactive frames state
-  const frameCount = frames ? frames.length : 0;
-  const currentFrame = useAppStore((state) => state.currentFrameIndex);
-
-  // Local state for scrubbing to pause playback during interaction
-  const [isScrubbing, setIsScrubbing] = useState(false);
-
-  // Handle scrubber input - updates state.currentFrameIndex source
-  const handleScrubberChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle scrubbing
+  const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newIndex = parseInt(e.target.value, 10);
-    
-    // Pause playback during scrubbing
-    if (!isScrubbing && isPlaying) {
-      setIsPlaying(false);
-      setIsScrubbing(true);
-    }
-    
-    // Update the state.currentFrameIndex source used by controlled input
     setCurrentFrameIndex(newIndex);
     goToFrame(newIndex);
-  }, [goToFrame, setCurrentFrameIndex, setIsPlaying, isPlaying, isScrubbing]);
-
-  // Handle scrubber release
-  const handleScrubberMouseUp = useCallback(() => {
-    if (isScrubbing) {
-      setIsScrubbing(false);
+    
+    // Pause during scrubbing
+    if (isPlaying) {
+      pause();
     }
-  }, [isScrubbing]);
+  };
 
-  if (!frames || frames.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full bg-gray-900 rounded-lg">
-        <div className="text-center text-gray-400">
-          <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-lg font-medium">No frames generated yet</p>
-          <p className="text-sm mt-1">Click "Generate Frames" to create animation</p>
-        </div>
-      </div>
-    );
-  }
+  const handleScrubberStart = () => {
+    setIsScrubbing(true);
+  };
+
+  const handleScrubberEnd = () => {
+    setIsScrubbing(false);
+    if (isPlaying) {
+      play();
+    }
+  };
+
+  const duration = frameCount > 0 ? (frameCount / fps).toFixed(2) : '0.00';
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Canvas container */}
-      <div className="flex-1 flex items-center justify-center bg-gray-900 rounded-lg overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          className="max-w-full max-h-full object-contain"
-          style={{ imageRendering: 'pixelated' }}
-        />
-      </div>
-
-      {/* Playback controls */}
-      <div className="mt-4 p-4 bg-gray-800 rounded-lg">
-        {/* Frame scrubber */}
-        <div className="mb-4">
-          <div className="flex justify-between text-xs text-gray-400 mb-2">
-            <span>Frame {currentFrame + 1}</span>
-            <span>{frameCount} frames</span>
+    <div className="flex flex-col items-center gap-4">
+      <canvas
+        ref={canvasRef}
+        className="border border-gray-600 rounded-lg shadow-lg"
+        style={{ 
+          imageRendering: 'pixelated',
+          width: '512px',
+          height: '512px',
+        }}
+      />
+      
+      {frameCount > 0 && (
+        <div className="w-full max-w-md px-4">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-400 w-12">
+              {currentFrameIndex + 1}
+            </span>
+            <input
+              type="range"
+              min="0"
+              max={frameCount - 1}
+              value={currentFrameIndex}
+              onChange={handleScrubberChange}
+              onMouseDown={handleScrubberStart}
+              onMouseUp={handleScrubberEnd}
+              onTouchStart={handleScrubberStart}
+              onTouchEnd={handleScrubberEnd}
+              className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+            <span className="text-sm text-gray-400 w-12 text-right">
+              {frameCount}
+            </span>
           </div>
-          <input
-            type="range"
-            min="0"
-            max={frameCount - 1}
-            value={currentFrame}
-            onChange={handleScrubberChange}
-            onMouseUp={handleScrubberMouseUp}
-            onTouchEnd={handleScrubberMouseUp}
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-          />
+          <div className="mt-2 text-xs text-gray-500 text-center">
+            Duration: {duration}s at {fps} FPS
+          </div>
         </div>
-
-        {/* Info bar */}
-        <div className="flex justify-between items-center text-xs text-gray-400">
-          <span>FPS: {fps}</span>
-          <span>Duration: {(frameCount / fps).toFixed(2)}s</span>
-          <span className={isPlaying ? 'text-green-400' : 'text-gray-400'}>
-            {isPlaying ? '▶ Playing' : '⏸ Paused'}
-          </span>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

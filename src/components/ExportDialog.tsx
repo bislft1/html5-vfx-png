@@ -1,42 +1,22 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { useFrameGenerator } from '../hooks/useFrameGenerator';
+import { exportAsPngSequence, exportAsSpritesheet, exportAsWebP } from '../utils/exporter';
+import { saveAs } from 'file-saver';
 
 export const ExportDialog: React.FC = () => {
   const showExportDialog = useAppStore((state) => state.showExportDialog);
+  const generatedFrames = useAppStore((state) => state.generatedFrames);
+  const fps = useAppStore((state) => state.config.fps);
   const setShowExportDialog = useAppStore((state) => state.setShowExportDialog);
-  
-  const { exportPNGSequence, exportSpritesheet, exportWebP } = useFrameGenerator();
-  const [isExporting, setIsExporting] = useState(false);
 
-  // Ref for managing focus
+  const [isExporting, setIsExporting] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  // Move early return below hooks
-  if (!showExportDialog) return null;
-
-  // Manage initial focus within the dialog and restore it when closed
+  // Close dialog on Escape key
   useEffect(() => {
-    // Store the currently focused element before opening dialog
-    previousFocusRef.current = document.activeElement as HTMLElement;
+    if (!showExportDialog) return;
 
-    // Focus the first button in the dialog when it opens
-    const firstButton = dialogRef.current?.querySelector('button');
-    if (firstButton) {
-      firstButton.focus();
-    }
-
-    // Cleanup: restore focus when dialog closes
-    return () => {
-      if (previousFocusRef.current) {
-        previousFocusRef.current.focus();
-      }
-    };
-  }, []);
-
-  // Handle Escape key to dismiss dialog
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setShowExportDialog(false);
@@ -44,125 +24,126 @@ export const ExportDialog: React.FC = () => {
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [setShowExportDialog]);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showExportDialog, setShowExportDialog]);
 
-  const handleClose = () => {
-    setShowExportDialog(false);
-  };
+  // Manage focus when dialog opens/closes
+  useEffect(() => {
+    if (showExportDialog) {
+      // Store previously focused element
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      
+      // Focus first button in dialog
+      setTimeout(() => {
+        dialogRef.current?.querySelector('button')?.focus();
+      }, 0);
+    } else {
+      // Restore focus when closed
+      previousFocusRef.current?.focus();
+    }
+  }, [showExportDialog]);
 
-  const handleExportPNG = async () => {
+  if (!showExportDialog || !generatedFrames) return null;
+
+  const handleExportPng = async () => {
     setIsExporting(true);
     try {
-      await exportPNGSequence();
+      const result = await exportAsPngSequence(generatedFrames, 'pixel_water');
+      if (result.success && result.blob) {
+        saveAs(result.blob, 'pixel_water_animation.zip');
+        setShowExportDialog(false);
+      }
     } finally {
       setIsExporting(false);
-      handleClose();
     }
   };
 
   const handleExportSpritesheet = async () => {
     setIsExporting(true);
     try {
-      await exportSpritesheet();
+      const result = await exportAsSpritesheet(generatedFrames, fps, 'pixel_water_sheet');
+      if (result.success && result.blob) {
+        saveAs(result.blob, 'pixel_water_spritesheet.zip');
+        setShowExportDialog(false);
+      }
     } finally {
       setIsExporting(false);
-      handleClose();
     }
   };
 
   const handleExportWebP = async () => {
     setIsExporting(true);
     try {
-      await exportWebP();
+      const result = await exportAsWebP(generatedFrames, fps, 'pixel_water');
+      if (result.success && result.blob) {
+        saveAs(result.blob, 'pixel_water_webp.zip');
+        setShowExportDialog(false);
+      }
     } finally {
       setIsExporting(false);
-      handleClose();
     }
   };
 
   return (
     <div 
       className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="export-dialog-title"
+      onClick={() => setShowExportDialog(false)}
     >
-      <div 
+      <div
         ref={dialogRef}
-        className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-dialog-title"
+        className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4"
+        onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="export-dialog-title" className="text-xl font-bold text-white mb-4">Export Animation</h2>
+        <h2 id="export-dialog-title" className="text-xl font-bold text-white mb-4">
+          Export Animation
+        </h2>
         
-        <div className="space-y-4">
-          {/* PNG Sequence */}
-          <button
-            onClick={handleExportPNG}
-            disabled={isExporting}
-            className="w-full p-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded-lg text-left transition-colors"
-          >
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center mr-3">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-white font-medium">PNG Sequence (ZIP)</div>
-                <div className="text-gray-400 text-sm">Individual frames as PNG files</div>
-              </div>
-            </div>
-          </button>
+        <p className="text-gray-300 mb-6">
+          Choose your export format. All options include metadata for game engine integration.
+        </p>
 
-          {/* Spritesheet */}
+        <div className="space-y-3">
+          <button
+            onClick={handleExportPng}
+            disabled={isExporting}
+            className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+          >
+            PNG Sequence (ZIP)
+          </button>
+          
           <button
             onClick={handleExportSpritesheet}
             disabled={isExporting}
-            className="w-full p-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded-lg text-left transition-colors"
+            className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors"
           >
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center mr-3">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-white font-medium">Spritesheet</div>
-                <div className="text-gray-400 text-sm">All frames in single image + metadata</div>
-              </div>
-            </div>
+            Spritesheet + JSON
           </button>
-
-          {/* WebP Sequence */}
+          
           <button
             onClick={handleExportWebP}
             disabled={isExporting}
-            className="w-full p-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed rounded-lg text-left transition-colors"
+            className="w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg font-medium transition-colors"
           >
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center mr-3">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-white font-medium">WebP Sequence (ZIP)</div>
-                <div className="text-gray-400 text-sm">Compressed frames, smaller file size</div>
-              </div>
-            </div>
+            WebP Sequence (ZIP)
           </button>
         </div>
 
-        {/* Close button */}
         <button
-          onClick={handleClose}
+          onClick={() => setShowExportDialog(false)}
           disabled={isExporting}
-          className="mt-6 w-full py-2 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          className="mt-6 w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 text-gray-300 rounded-lg transition-colors"
         >
           Cancel
         </button>
+
+        {isExporting && (
+          <p className="mt-4 text-sm text-gray-400 text-center">
+            Exporting frames...
+          </p>
+        )}
       </div>
     </div>
   );

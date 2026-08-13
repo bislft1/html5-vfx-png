@@ -1,103 +1,93 @@
 import { useEffect, useRef, useCallback } from 'react';
-import type { RefObject } from 'react';
-import { FrameAnimation, FrameAnimationOptions } from '../utils/frameAnimation';
+import { FrameAnimation } from '../utils/frameAnimation';
 
 interface UseFrameAnimationOptions {
-  canvasRef: RefObject<HTMLCanvasElement>;
-  frames: ImageData[] | null;
+  canvasRef: React.RefObject<HTMLCanvasElement>;
+  frames: ImageData[];
   fps: number;
   isPlaying: boolean;
+  currentFrameIndex: number;
   onFrameUpdate?: (frameIndex: number) => void;
 }
 
-/**
- * Hook to manage frame animation playback
- */
 export function useFrameAnimation({
   canvasRef,
   frames,
   fps,
   isPlaying,
+  currentFrameIndex,
   onFrameUpdate,
 }: UseFrameAnimationOptions) {
   const animationRef = useRef<FrameAnimation | null>(null);
-  const callbackRef = useRef(onFrameUpdate);
+  const onFrameUpdateRef = useRef(onFrameUpdate);
 
-  // Store latest callback in ref to stabilize onFrameUpdate
+  // Keep callback ref updated
   useEffect(() => {
-    callbackRef.current = onFrameUpdate;
+    onFrameUpdateRef.current = onFrameUpdate;
   }, [onFrameUpdate]);
 
-  // Initialize animation when frames change
+  // Initialize animation instance
   useEffect(() => {
-    if (!frames || frames.length === 0 || !canvasRef.current) return;
+    if (!canvasRef.current || frames.length === 0) return;
 
-    // Set canvas size before first draw
-    canvasRef.current.width = frames[0].width;
-    canvasRef.current.height = frames[0].height;
-
-    const options: FrameAnimationOptions = {
+    animationRef.current = new FrameAnimation({
       canvasRef,
       frames,
       fps,
       onFrameUpdate: (index: number) => {
-        if (callbackRef.current) {
-          callbackRef.current(index);
-        }
+        onFrameUpdateRef.current?.(index);
       },
-    };
+    });
 
-    animationRef.current = new FrameAnimation(options);
-    
     // Draw initial frame
-    const ctx = canvasRef.current.getContext('2d');
-    if (ctx) {
-      animationRef.current.draw(ctx);
-    }
+    animationRef.current.goToFrame(currentFrameIndex);
 
     return () => {
-      if (animationRef.current) {
-        animationRef.current.stop();
-      }
+      animationRef.current?.destroy();
+      animationRef.current = null;
     };
-  }, [frames, fps, canvasRef]);
+  }, []); // Only run once on mount
 
-  // Handle play/pause - responds to animation changes
+  // Update frames when they change
   useEffect(() => {
-    if (!animationRef.current) return;
+    if (animationRef.current && frames.length > 0) {
+      animationRef.current.setFrames(frames);
+    }
+  }, [frames]);
+
+  // Handle play/pause based on isPlaying and frames availability
+  useEffect(() => {
+    if (!animationRef.current || frames.length === 0) return;
 
     if (isPlaying) {
       animationRef.current.play();
     } else {
-      animationRef.current.stop();
+      animationRef.current.pause();
     }
-  }, [isPlaying, frames, fps]);
+  }, [isPlaying, fps, frames.length]);
+
+  // Handle frame navigation
+  useEffect(() => {
+    if (animationRef.current && frames.length > 0) {
+      animationRef.current.goToFrame(currentFrameIndex);
+    }
+  }, [currentFrameIndex, frames.length]);
 
   const goToFrame = useCallback((index: number) => {
-    if (animationRef.current) {
-      animationRef.current.goToFrame(index);
-      
-      // Redraw immediately
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        if (ctx) {
-          animationRef.current!.draw(ctx);
-        }
-      }
-    }
+    animationRef.current?.goToFrame(index);
   }, []);
 
-  const getCurrentFrame = useCallback(() => {
-    return animationRef.current?.getCurrentFrame() ?? 0;
+  const play = useCallback(() => {
+    animationRef.current?.play();
   }, []);
 
-  const getFrameCount = useCallback(() => {
-    return animationRef.current?.getFrameCount() ?? 0;
+  const pause = useCallback(() => {
+    animationRef.current?.pause();
   }, []);
 
-  return {
-    goToFrame,
-    getCurrentFrame,
-    getFrameCount,
-  };
+  const stop = useCallback(() => {
+    animationRef.current?.stop();
+  }, []);
+
+  return { goToFrame, play, pause, stop };
 }
